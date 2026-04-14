@@ -2,6 +2,7 @@ package ironic
 
 import (
 	"fmt"
+	"net/netip"
 	"strings"
 	"testing"
 
@@ -1047,6 +1048,26 @@ func TestBuildTrustedCAEnvVars(t *testing.T) {
 			expectedPath := "/certs/ca/trusted/" + tc.expectedKey
 			assert.Equal(t, expectedPath, envVars[0].Value, "WEBSERVER_CACERT_FILE value mismatch")
 			assert.Equal(t, expectedPath, envVars[1].Value, "IRONIC_CACERT_FILE value mismatch")
+		})
+	}
+}
+
+func TestPrefixToNetmask(t *testing.T) {
+	testCases := []struct {
+		CIDR     string
+		Expected string
+	}{
+		{"192.168.1.0/24", "255.255.255.0"},
+		{"10.0.0.0/16", "255.255.0.0"},
+		{"10.0.0.0/8", "255.0.0.0"},
+		{"192.168.1.0/32", "255.255.255.255"},
+		{"fd69:158d:692a:1::/64", "64"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.CIDR, func(t *testing.T) {
+			prefix, err := netip.ParsePrefix(tc.CIDR)
+			require.NoError(t, err)
+			assert.Equal(t, tc.Expected, prefixToNetmask(prefix))
 		})
 	}
 }
