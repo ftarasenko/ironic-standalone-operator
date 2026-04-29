@@ -20,6 +20,10 @@ var (
 
 	versionBMCCA      = metal3api.Version330
 	versionNetworking = metal3api.Version350
+
+	// versionMultiRangeDHCP gates Ranges: requires ironic-image support for
+	// split DHCP_RANGE and DHCP_OPTIONS env vars.
+	versionMultiRangeDHCP = metal3api.Version360
 )
 
 type VersionInfo struct {
@@ -123,6 +127,10 @@ func CheckVersion(resources Resources, version metal3api.Version) error {
 
 	if resources.Ironic.IsNetworkingServiceEnabled() && version.Compare(versionNetworking) < 0 {
 		return errors.New("networking service is only supported in Ironic 35.0 or newer")
+	}
+
+	if dhcp := resources.Ironic.Spec.Networking.DHCP; dhcp != nil && len(dhcp.Ranges) > 0 && version.Compare(versionMultiRangeDHCP) < 0 {
+		return errors.New("networking.dhcp.ranges requires Ironic 36.0 or newer")
 	}
 
 	return nil

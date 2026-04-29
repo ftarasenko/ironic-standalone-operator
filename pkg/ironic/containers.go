@@ -621,37 +621,50 @@ func prefixToNetmask(prefix netip.Prefix) string {
 	return fmt.Sprintf("%d.%d.%d.%d", mask>>24, (mask>>16)&0xFF, (mask>>8)&0xFF, mask&0xFF)
 }
 
+func rangeTag(r metal3api.DHCPRange, idx int) string {
+	if r.Name != "" {
+		return r.Name
+	}
+	return fmt.Sprintf("range_%d", idx+1)
+}
+
 func buildDHCPRange(dhcp *metal3api.DHCP) string {
 	var parts []string
 
-	// Primary range from flat fields (backward compatible)
 	if dhcp.NetworkCIDR != "" && dhcp.RangeBegin != "" && dhcp.RangeEnd != "" {
 		prefix, err := netip.ParsePrefix(dhcp.NetworkCIDR)
 		if err == nil {
 			if len(dhcp.Ranges) > 0 {
-				// When combined with Ranges, use netmask format for consistency
 				parts = append(parts, fmt.Sprintf("%s,%s,%s", dhcp.RangeBegin, dhcp.RangeEnd, prefixToNetmask(prefix)))
 			} else {
-				// Single-range: keep prefix length for ironic-image compatibility
 				return fmt.Sprintf("%s,%s,%d", dhcp.RangeBegin, dhcp.RangeEnd, prefix.Bits())
 			}
 		}
 	}
 
-	// Additional ranges with optional tags
-	for _, r := range dhcp.Ranges {
+	for i, r := range dhcp.Ranges {
 		prefix, err := netip.ParsePrefix(r.NetworkCIDR)
 		if err != nil {
 			continue
 		}
-		netmask := prefixToNetmask(prefix)
-		if r.Name != "" {
-			parts = append(parts, fmt.Sprintf("set:%s,%s,%s,%s", r.Name, r.RangeBegin, r.RangeEnd, netmask))
-		} else {
-			parts = append(parts, fmt.Sprintf("%s,%s,%s", r.RangeBegin, r.RangeEnd, netmask))
-		}
+		parts = append(parts, fmt.Sprintf("set:%s,%s,%s,%s",
+			rangeTag(r, i), r.RangeBegin, r.RangeEnd, prefixToNetmask(prefix)))
 	}
 
+	return strings.Join(parts, ";")
+}
+
+// buildDHCPOptions is the single source of truth for per-range dhcp-option
+// directives. The ironic-image template splits the value on ";" and emits one
+// "dhcp-option=" line per item, so DHCP_RANGE must not also carry any
+// "dhcp-option=" content (would render twice).
+func buildDHCPOptions(dhcp *metal3api.DHCP) string {
+	var parts []string
+	for i, r := range dhcp.Ranges {
+		if r.GatewayAddress != "" {
+			parts = append(parts, fmt.Sprintf("tag:%s,option:router,%s", rangeTag(r, i), r.GatewayAddress))
+		}
+	}
 	return strings.Join(parts, ";")
 }
 
@@ -708,8 +721,17 @@ func newDnsmasqContainer(versionInfo VersionInfo, ironic *metal3api.Ironic) core
 
 	envVars = appendStringEnv(envVars,
 		"DNS_IP", buildDNSIP(dhcp))
+
+	// In relay-only mode, an untagged GATEWAY_IP would leak as a fallback
+	// router for unmatched clients; only per-range routers should apply.
+	gatewayIP := dhcp.GatewayAddress
+	if dhcp.NetworkCIDR == "" && len(dhcp.Ranges) > 0 {
+		gatewayIP = ""
+	}
+	envVars = appendStringEnv(envVars, "GATEWAY_IP", gatewayIP)
+
 	envVars = appendStringEnv(envVars,
-		"GATEWAY_IP", dhcp.GatewayAddress)
+		"DHCP_OPTIONS", buildDHCPOptions(dhcp))
 	envVars = appendListOfStringsEnv(envVars,
 		"DHCP_HOSTS", dhcp.Hosts, ";")
 	envVars = appendListOfStringsEnv(envVars,
