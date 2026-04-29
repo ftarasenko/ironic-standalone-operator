@@ -650,6 +650,31 @@ func buildDHCPRange(dhcp *metal3api.DHCP) string {
 		}
 	}
 
+	// Use newline-separated dhcp-range directives for multi-range support.
+	// The ironic image's dnsmasq.conf.j2 renders: dhcp-range={{ env.DHCP_RANGE }}
+	// so the first range gets the prefix from the template, and subsequent
+	// ranges get their prefix embedded in the separator.
+	result := strings.Join(parts, "\ndhcp-range=")
+
+	// Append per-range DHCP options (gateways) as separate config lines.
+	// The ironic image's template does not render the DHCP_OPTIONS env var,
+	// so we embed them directly after the range directives.
+	for _, r := range dhcp.Ranges {
+		if r.Name != "" && r.GatewayAddress != "" {
+			result += fmt.Sprintf("\ndhcp-option=tag:%s,option:router,%s", r.Name, r.GatewayAddress)
+		}
+	}
+
+	return result
+}
+
+func buildDHCPOptions(dhcp *metal3api.DHCP) string {
+	var parts []string
+	for _, r := range dhcp.Ranges {
+		if r.Name != "" && r.GatewayAddress != "" {
+			parts = append(parts, fmt.Sprintf("tag:%s,option:router,%s", r.Name, r.GatewayAddress))
+		}
+	}
 	return strings.Join(parts, ";")
 }
 
@@ -708,6 +733,8 @@ func newDnsmasqContainer(versionInfo VersionInfo, ironic *metal3api.Ironic) core
 		"DNS_IP", buildDNSIP(dhcp))
 	envVars = appendStringEnv(envVars,
 		"GATEWAY_IP", dhcp.GatewayAddress)
+	envVars = appendStringEnv(envVars,
+		"DHCP_OPTIONS", buildDHCPOptions(dhcp))
 	envVars = appendListOfStringsEnv(envVars,
 		"DHCP_HOSTS", dhcp.Hosts, ";")
 	envVars = appendListOfStringsEnv(envVars,

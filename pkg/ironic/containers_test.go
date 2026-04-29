@@ -1454,3 +1454,58 @@ func TestIsAuthVolumeRequired(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildDHCPOptions(t *testing.T) {
+	testCases := []struct {
+		Scenario string
+		DHCP     metal3api.DHCP
+		Expected string
+	}{
+		{
+			Scenario: "no ranges",
+			DHCP:     metal3api.DHCP{},
+			Expected: "",
+		},
+		{
+			Scenario: "flat gateway only",
+			DHCP: metal3api.DHCP{
+				GatewayAddress: "10.0.0.1",
+			},
+			Expected: "",
+		},
+		{
+			Scenario: "named ranges with gateways",
+			DHCP: metal3api.DHCP{
+				Ranges: []metal3api.DHCPRange{
+					{Name: "mgmt", NetworkCIDR: "10.0.0.0/24", RangeBegin: "10.0.0.10", RangeEnd: "10.0.0.100", GatewayAddress: "10.0.0.1"},
+					{Name: "pxe", NetworkCIDR: "192.168.1.0/24", RangeBegin: "192.168.1.10", RangeEnd: "192.168.1.200", GatewayAddress: "192.168.1.1"},
+				},
+			},
+			Expected: "tag:mgmt,option:router,10.0.0.1;tag:pxe,option:router,192.168.1.1",
+		},
+		{
+			Scenario: "named range without gateway",
+			DHCP: metal3api.DHCP{
+				Ranges: []metal3api.DHCPRange{
+					{Name: "mgmt", NetworkCIDR: "10.0.0.0/24", RangeBegin: "10.0.0.10", RangeEnd: "10.0.0.100", GatewayAddress: "10.0.0.1"},
+					{Name: "pxe", NetworkCIDR: "192.168.1.0/24", RangeBegin: "192.168.1.10", RangeEnd: "192.168.1.200"},
+				},
+			},
+			Expected: "tag:mgmt,option:router,10.0.0.1",
+		},
+		{
+			Scenario: "unnamed range with gateway ignored",
+			DHCP: metal3api.DHCP{
+				Ranges: []metal3api.DHCPRange{
+					{NetworkCIDR: "192.168.1.0/24", RangeBegin: "192.168.1.10", RangeEnd: "192.168.1.200", GatewayAddress: "192.168.1.1"},
+				},
+			},
+			Expected: "",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.Scenario, func(t *testing.T) {
+			assert.Equal(t, tc.Expected, buildDHCPOptions(&tc.DHCP))
+		})
+	}
+}
