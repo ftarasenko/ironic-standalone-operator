@@ -288,9 +288,6 @@ func TestTrustedCAConfigMap(t *testing.T) {
 	testCases := []struct {
 		Scenario                string
 		TrustedCAConfigMap      *corev1.ConfigMap
-		ExpectVolume            bool
-		ExpectVolumeMount       bool
-		ExpectEnvVar            bool
 		ExpectedVolumeMountPath string
 		ExpectedEnvVarValue     string
 	}{
@@ -305,9 +302,6 @@ func TestTrustedCAConfigMap(t *testing.T) {
 					"ca-bundle.crt": "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----",
 				},
 			},
-			ExpectVolume:            true,
-			ExpectVolumeMount:       true,
-			ExpectEnvVar:            true,
 			ExpectedVolumeMountPath: "/certs/ca/trusted",
 			ExpectedEnvVarValue:     "/certs/ca/trusted/ca-bundle.crt",
 		},
@@ -323,19 +317,12 @@ func TestTrustedCAConfigMap(t *testing.T) {
 					"extra-ca.crt":  "-----BEGIN CERTIFICATE-----\nextra\n-----END CERTIFICATE-----",
 				},
 			},
-			ExpectVolume:            true,
-			ExpectVolumeMount:       true,
-			ExpectEnvVar:            true,
 			ExpectedVolumeMountPath: "/certs/ca/trusted",
-			// Note: The actual key used will depend on map iteration order, but we just verify it exists
-			ExpectedEnvVarValue: "", // We'll check it contains /certs/ca/trusted/ prefix instead
+			ExpectedEnvVarValue:     "/certs/ca/trusted/ca-bundle.crt", // keys are sorted, ca-bundle.crt comes first
 		},
 		{
 			Scenario:           "without TrustedCAConfigMap",
 			TrustedCAConfigMap: nil,
-			ExpectVolume:       false,
-			ExpectVolumeMount:  false,
-			ExpectEnvVar:       false,
 		},
 	}
 
@@ -364,19 +351,21 @@ func TestTrustedCAConfigMap(t *testing.T) {
 			podTemplate, err := newIronicPodTemplate(cctx, resources)
 			require.NoError(t, err)
 
+			expectTrustedCA := tc.ExpectedEnvVarValue != ""
+
 			// Check volume
 			var foundVolume bool
 			for _, vol := range podTemplate.Spec.Volumes {
 				if vol.Name == "trusted-ca" {
 					foundVolume = true
-					if tc.ExpectVolume {
+					if expectTrustedCA {
 						assert.NotNil(t, vol.ConfigMap)
 						assert.Equal(t, tc.TrustedCAConfigMap.Name, vol.ConfigMap.Name)
 					}
 					break
 				}
 			}
-			assert.Equal(t, tc.ExpectVolume, foundVolume, "Volume existence mismatch")
+			assert.Equal(t, expectTrustedCA, foundVolume, "Volume existence mismatch")
 
 			// Check volume mount on ironic container
 			var ironicContainer *corev1.Container
@@ -392,34 +381,34 @@ func TestTrustedCAConfigMap(t *testing.T) {
 			for _, mount := range ironicContainer.VolumeMounts {
 				if mount.Name == "trusted-ca" {
 					foundMount = true
-					if tc.ExpectVolumeMount {
+					if expectTrustedCA {
 						assert.Equal(t, tc.ExpectedVolumeMountPath, mount.MountPath)
 						assert.True(t, mount.ReadOnly)
 					}
 					break
 				}
 			}
-			assert.Equal(t, tc.ExpectVolumeMount, foundMount, "Volume mount existence mismatch")
+			assert.Equal(t, expectTrustedCA, foundMount, "Volume mount existence mismatch")
 
-			// Check environment variable (WEBSERVER_CACERT_FILE)
-			var foundWebserverCACert bool
-			var webserverCACertValue string
+			// Check environment variables (WEBSERVER_CACERT_FILE and IRONIC_CACERT_FILE)
+			var foundWebserverCACert, foundIronicCACert bool
+			var webserverCACertValue, ironicCACertValue string
 			for _, env := range ironicContainer.Env {
 				if env.Name == "WEBSERVER_CACERT_FILE" {
 					foundWebserverCACert = true
 					webserverCACertValue = env.Value
 				}
-			}
-			assert.Equal(t, tc.ExpectEnvVar, foundWebserverCACert, "WEBSERVER_CACERT_FILE environment variable existence mismatch")
-
-			if tc.ExpectEnvVar {
-				if tc.ExpectedEnvVarValue != "" {
-					// Exact match for single key case
-					assert.Equal(t, tc.ExpectedEnvVarValue, webserverCACertValue, "WEBSERVER_CACERT_FILE value mismatch")
-				} else {
-					// For multiple keys case, just verify it starts with the correct prefix
-					assert.Contains(t, webserverCACertValue, "/certs/ca/trusted/", "WEBSERVER_CACERT_FILE should contain /certs/ca/trusted/")
+				if env.Name == "IRONIC_CACERT_FILE" {
+					foundIronicCACert = true
+					ironicCACertValue = env.Value
 				}
+			}
+			assert.Equal(t, expectTrustedCA, foundWebserverCACert, "WEBSERVER_CACERT_FILE environment variable existence mismatch")
+			assert.Equal(t, expectTrustedCA, foundIronicCACert, "IRONIC_CACERT_FILE environment variable existence mismatch")
+
+			if expectTrustedCA {
+				assert.Equal(t, tc.ExpectedEnvVarValue, webserverCACertValue, "WEBSERVER_CACERT_FILE value mismatch")
+				assert.Equal(t, tc.ExpectedEnvVarValue, ironicCACertValue, "IRONIC_CACERT_FILE value mismatch")
 			}
 		})
 	}
@@ -510,6 +499,7 @@ func TestPrometheusExporterEnvVars(t *testing.T) {
 		prometheusExporter     *metal3api.PrometheusExporter
 		expectedSendSensorData string
 		expectedSensorInterval string
+		expectedFlaskRunHost   string
 	}{
 		{
 			name: "PrometheusExporter enabled with default interval",
@@ -519,6 +509,7 @@ func TestPrometheusExporterEnvVars(t *testing.T) {
 			},
 			expectedSendSensorData: "true",
 			expectedSensorInterval: "60",
+			expectedFlaskRunHost:   "0.0.0.0",
 		},
 		{
 			name: "PrometheusExporter enabled with custom interval",
@@ -528,6 +519,36 @@ func TestPrometheusExporterEnvVars(t *testing.T) {
 			},
 			expectedSendSensorData: "true",
 			expectedSensorInterval: "120",
+			expectedFlaskRunHost:   "0.0.0.0",
+		},
+		{
+			name: "PrometheusExporter enabled with bindAddress 0.0.0.0",
+			prometheusExporter: &metal3api.PrometheusExporter{
+				Enabled:     true,
+				BindAddress: "0.0.0.0",
+			},
+			expectedSendSensorData: "true",
+			expectedSensorInterval: "60",
+			expectedFlaskRunHost:   "0.0.0.0",
+		},
+		{
+			name: "PrometheusExporter enabled with custom bindAddress",
+			prometheusExporter: &metal3api.PrometheusExporter{
+				Enabled:     true,
+				BindAddress: "192.168.1.10",
+			},
+			expectedSendSensorData: "true",
+			expectedSensorInterval: "60",
+			expectedFlaskRunHost:   "192.168.1.10",
+		},
+		{
+			name: "PrometheusExporter enabled with empty bindAddress defaults to wildcard",
+			prometheusExporter: &metal3api.PrometheusExporter{
+				Enabled: true,
+			},
+			expectedSendSensorData: "true",
+			expectedSensorInterval: "60",
+			expectedFlaskRunHost:   "0.0.0.0",
 		},
 		{
 			name: "PrometheusExporter disabled",
@@ -579,9 +600,11 @@ func TestPrometheusExporterEnvVars(t *testing.T) {
 			require.NotNil(t, ironicContainer, "ironic container not found")
 			if expectExporter {
 				require.NotNil(t, exporterContainer, "ironic-prometheus-exporter container not found")
-				assert.Len(t, exporterContainer.Env, 1)
-				assert.Equal(t, "FLASK_RUN_PORT", exporterContainer.Env[0].Name)
-				assert.Equal(t, "9608", exporterContainer.Env[0].Value)
+				assert.Len(t, exporterContainer.Env, 2)
+				assert.Equal(t, "FLASK_RUN_HOST", exporterContainer.Env[0].Name)
+				assert.Equal(t, tc.expectedFlaskRunHost, exporterContainer.Env[0].Value)
+				assert.Equal(t, "FLASK_RUN_PORT", exporterContainer.Env[1].Name)
+				assert.Equal(t, "9608", exporterContainer.Env[1].Value)
 				assert.Len(t, exporterContainer.Ports, 1)
 				assert.Equal(t, int32(9608), exporterContainer.Ports[0].ContainerPort)
 			}
@@ -1015,13 +1038,15 @@ func TestBuildTrustedCAEnvVars(t *testing.T) {
 
 			envVars := buildTrustedCAEnvVars(cctx, resources)
 
-			// Should always return exactly one env var
-			require.Len(t, envVars, 1, "Should return exactly one environment variable")
+			// Should return WEBSERVER_CACERT_FILE and IRONIC_CACERT_FILE
+			require.Len(t, envVars, 2, "Should return two environment variables")
 			assert.Equal(t, "WEBSERVER_CACERT_FILE", envVars[0].Name)
+			assert.Equal(t, "IRONIC_CACERT_FILE", envVars[1].Name)
 
 			// Verify the path contains the expected key
 			expectedPath := "/certs/ca/trusted/" + tc.expectedKey
-			assert.Equal(t, expectedPath, envVars[0].Value, "Environment variable value mismatch")
+			assert.Equal(t, expectedPath, envVars[0].Value, "WEBSERVER_CACERT_FILE value mismatch")
+			assert.Equal(t, expectedPath, envVars[1].Value, "IRONIC_CACERT_FILE value mismatch")
 		})
 	}
 }
@@ -1111,10 +1136,13 @@ func TestBuildTrustedCAEnvVarsKeySelection(t *testing.T) {
 			}
 
 			envVars := buildTrustedCAEnvVars(cctx, resources)
-			require.Len(t, envVars, 1)
+			require.Len(t, envVars, 2)
 
 			expectedPath := "/certs/ca/trusted/" + tc.expectedKey
+			assert.Equal(t, "WEBSERVER_CACERT_FILE", envVars[0].Name)
 			assert.Equal(t, expectedPath, envVars[0].Value)
+			assert.Equal(t, "IRONIC_CACERT_FILE", envVars[1].Name)
+			assert.Equal(t, expectedPath, envVars[1].Value)
 		})
 	}
 }
