@@ -181,6 +181,43 @@ func TestValidateIronic(t *testing.T) {
 			ExpectedError: "keepalived requires specifying both ipAddress and interface",
 		},
 		{
+			Scenario: "KeepalivedVRID without ipAddressManager",
+			Ironic: metal3api.IronicSpec{
+				Networking: metal3api.Networking{
+					KeepalivedVRID: 42,
+				},
+			},
+			ExpectedError: "keepalivedVRID requires ipAddressManager to be keepalived",
+		},
+		{
+			Scenario: "KeepalivedVRID default is allowed without ipAddressManager",
+			Ironic: metal3api.IronicSpec{
+				Networking: metal3api.Networking{
+					KeepalivedVRID: 1,
+				},
+			},
+		},
+		{
+			Scenario: "KeepalivedPasswordRef without ipAddressManager",
+			Ironic: metal3api.IronicSpec{
+				Networking: metal3api.Networking{
+					KeepalivedPasswordRef: &metal3api.ResourceReference{Name: "vrrp-secret"},
+				},
+			},
+			ExpectedError: "keepalivedPasswordRef requires ipAddressManager to be keepalived",
+		},
+		{
+			Scenario: "KeepalivedPasswordRef with keepalived is allowed",
+			Ironic: metal3api.IronicSpec{
+				Networking: metal3api.Networking{
+					Interface:             "eth0",
+					IPAddress:             "192.0.2.2",
+					IPAddressManager:      metal3api.IPAddressManagerKeepalived,
+					KeepalivedPasswordRef: &metal3api.ResourceReference{Name: "vrrp-secret"},
+				},
+			},
+		},
+		{
 			Scenario: "Keepalived exclusive with HA",
 			Ironic: metal3api.IronicSpec{
 				Database: &metal3api.Database{

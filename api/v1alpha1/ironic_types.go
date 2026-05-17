@@ -214,6 +214,15 @@ type Networking struct {
 	// +kubebuilder:validation:Maximum=255
 	// +optional
 	KeepalivedVRID int32 `json:"keepalivedVRID,omitempty"`
+
+	// KeepalivedPasswordRef references a Secret with the VRRP simple-auth
+	// (PASS) password under the key "password". VRRP truncates the value to
+	// 8 bytes — longer values are silently cut by keepalived.
+	// The password must consist of characters safe to embed unquoted in a
+	// keepalived.conf line (printable ASCII, no whitespace, no '"' or '\').
+	// Only applies when IPAddressManager is "keepalived".
+	// +optional
+	KeepalivedPasswordRef *ResourceReference `json:"keepalivedPasswordRef,omitempty"`
 }
 
 // CPUArchitecture represents a CPU architecture supported by IPA.

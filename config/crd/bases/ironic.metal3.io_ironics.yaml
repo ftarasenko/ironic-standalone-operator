@@ -316,6 +316,28 @@ spec:
                     - ""
                     - keepalived
                     type: string
+                  keepalivedPasswordRef:
+                    description: |-
+                      KeepalivedPasswordRef references a Secret with the VRRP simple-auth
+                      (PASS) password under the key "password". VRRP truncates the value to
+                      8 bytes — longer values are silently cut by keepalived.
+                      The password must consist of characters safe to embed unquoted in a
+                      keepalived.conf line (printable ASCII, no whitespace, no '"' or '\').
+                      Only applies when IPAddressManager is "keepalived".
+                    properties:
+                      kind:
+                        description: Kind of the resource (ConfigMap or Secret).
+                        enum:
+                        - ConfigMap
+                        - Secret
+                        type: string
+                      name:
+                        description: Name of the resource.
+                        type: string
+                    required:
+                    - kind
+                    - name
+                    type: object
                   keepalivedVRID:
                     default: 1
                     description: |-

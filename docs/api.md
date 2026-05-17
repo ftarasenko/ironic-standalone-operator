@@ -529,6 +529,18 @@ Warning: keepalived is not compatible with the highly available architecture.<br
         </td>
         <td>false</td>
       </tr><tr>
+        <td><b><a href="#ironicspecnetworkingkeepalivedpasswordref">keepalivedPasswordRef</a></b></td>
+        <td>object</td>
+        <td>
+          KeepalivedPasswordRef references a Secret with the VRRP simple-auth
+(PASS) password under the key "password". VRRP truncates the value to
+8 bytes — longer values are silently cut by keepalived.
+The password must consist of characters safe to embed unquoted in a
+keepalived.conf line (printable ASCII, no whitespace, no '"' or '\').
+Only applies when IPAddressManager is "keepalived".<br/>
+        </td>
+        <td>false</td>
+      </tr><tr>
         <td><b>keepalivedVRID</b></td>
         <td>integer</td>
         <td>
@@ -633,7 +645,7 @@ There is no API-side validation. Most users will leave this unset.<br/>
         <td><b>networkCIDR</b></td>
         <td>string</td>
         <td>
-          NetworkCIDR is a CIDR of the provisioning network. Required.<br/>
+          NetworkCIDR is a CIDR of the provisioning network. Required when Ranges is not set.<br/>
         </td>
         <td>false</td>
       </tr><tr>
@@ -651,6 +663,18 @@ There is no API-side validation. Most users will leave this unset.<br/>
         </td>
         <td>false</td>
       </tr><tr>
+        <td><b><a href="#ironicspecnetworkingdhcprangesindex">ranges</a></b></td>
+        <td>[]object</td>
+        <td>
+          Ranges is a list of DHCP address ranges for multi-subnet support.
+Can be used together with the top-level NetworkCIDR, RangeBegin, RangeEnd
+fields — both are concatenated into the dnsmasq configuration.
+Each range can have its own CIDR and dnsmasq tag name.
+The provisioning IP (networking.ipAddress) does not need to be in any range's
+CIDR, enabling DHCP relay scenarios.<br/>
+        </td>
+        <td>false</td>
+      </tr><tr>
         <td><b>serveDNS</b></td>
         <td>boolean</td>
         <td>
@@ -658,6 +682,104 @@ There is no API-side validation. Most users will leave this unset.<br/>
 Must not be set together with DNSAddress.<br/>
         </td>
         <td>false</td>
+      </tr></tbody>
+</table>
+
+
+### Ironic.spec.networking.dhcp.ranges[index]
+<sup><sup>[↩ Parent](#ironicspecnetworkingdhcp)</sup></sup>
+
+
+
+DHCPRange defines a single DHCP address range with per-range options.
+Used in the Ranges field for multi-subnet DHCP support.
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Description</th>
+            <th>Required</th>
+        </tr>
+    </thead>
+    <tbody><tr>
+        <td><b>networkCIDR</b></td>
+        <td>string</td>
+        <td>
+          NetworkCIDR is the CIDR of the provisioning network for this range.<br/>
+        </td>
+        <td>true</td>
+      </tr><tr>
+        <td><b>rangeBegin</b></td>
+        <td>string</td>
+        <td>
+          RangeBegin is the first IP that can be given to hosts. Must be inside NetworkCIDR.<br/>
+        </td>
+        <td>true</td>
+      </tr><tr>
+        <td><b>rangeEnd</b></td>
+        <td>string</td>
+        <td>
+          RangeEnd is the last IP that can be given to hosts. Must be inside NetworkCIDR.<br/>
+        </td>
+        <td>true</td>
+      </tr><tr>
+        <td><b>gatewayAddress</b></td>
+        <td>string</td>
+        <td>
+          GatewayAddress is the IP address of the gateway for this range.<br/>
+        </td>
+        <td>false</td>
+      </tr><tr>
+        <td><b>name</b></td>
+        <td>string</td>
+        <td>
+          Name is used as a dnsmasq tag for per-range options (e.g. gateway).
+Must be unique across ranges. Required when multiple ranges are defined.<br/>
+        </td>
+        <td>false</td>
+      </tr></tbody>
+</table>
+
+
+### Ironic.spec.networking.keepalivedPasswordRef
+<sup><sup>[↩ Parent](#ironicspecnetworking)</sup></sup>
+
+
+
+KeepalivedPasswordRef references a Secret with the VRRP simple-auth
+(PASS) password under the key "password". VRRP truncates the value to
+8 bytes — longer values are silently cut by keepalived.
+The password must consist of characters safe to embed unquoted in a
+keepalived.conf line (printable ASCII, no whitespace, no '"' or '\').
+Only applies when IPAddressManager is "keepalived".
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Description</th>
+            <th>Required</th>
+        </tr>
+    </thead>
+    <tbody><tr>
+        <td><b>kind</b></td>
+        <td>enum</td>
+        <td>
+          Kind of the resource (ConfigMap or Secret).<br/>
+          <br/>
+            <i>Enum</i>: ConfigMap, Secret<br/>
+        </td>
+        <td>true</td>
+      </tr><tr>
+        <td><b>name</b></td>
+        <td>string</td>
+        <td>
+          Name of the resource.<br/>
+        </td>
+        <td>true</td>
       </tr></tbody>
 </table>
 

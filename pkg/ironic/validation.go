@@ -272,6 +272,13 @@ func ValidateIronic(ironic *metal3api.IronicSpec, old *metal3api.IronicSpec) err
 		if ironic.Networking.IPAddress == "" || ironic.Networking.Interface == "" {
 			return errors.New("networking: keepalived requires specifying both ipAddress and interface")
 		}
+	} else {
+		if ironic.Networking.KeepalivedVRID > 1 {
+			return errors.New("networking: keepalivedVRID requires ipAddressManager to be keepalived")
+		}
+		if ironic.Networking.KeepalivedPasswordRef != nil {
+			return errors.New("networking: keepalivedPasswordRef requires ipAddressManager to be keepalived")
+		}
 	}
 
 	if ironic.HighAvailability && ironic.PrometheusExporter != nil && !ironic.PrometheusExporter.DisableServiceMonitor {
